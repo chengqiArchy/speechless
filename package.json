@@ -1,0 +1,24 @@
+{
+  "name": "speechless",
+  "version": "0.1.0",
+  "private": true,
+  "description": "异地双人实时文字转语音会话",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --check src/room-store.js && node --check src/cosyvoice-client.js && node --check public/app.js && node --check public/voice-loader.js && node --check public/audio-recorder.js && node --check public/recording-flow.js && python3 -m py_compile services/cosyvoice_server.py"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.2.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

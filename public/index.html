@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17221d">
+  <title>声桥 · Speechless</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="声桥首页"><span aria-hidden="true">声桥</span><small>Speechless</small></a>
+    <span class="privacy-chip">消息不留存</span>
+  </header>
+
+  <main>
+    <section id="home-view" class="view hero" hidden>
+      <div class="hero-copy">
+        <p class="eyebrow">让文字跨越距离，被听见</p>
+        <h1>你来打字，<br><em>我来听。</em></h1>
+        <p class="lede">创建一个临时语音房间。你发送的每句话，会在所有听语音端的设备上即时朗读。</p>
+        <ul class="feature-list" aria-label="主要特点">
+          <li>无需注册</li><li>支持多人同时收听</li><li>消息不写入数据库</li>
+        </ul>
+      </div>
+      <form id="create-form" class="card setup-card">
+        <h2>创建临时房间</h2>
+        <label for="creator-name">你的显示名称</label>
+        <input id="creator-name" name="name" maxlength="40" autocomplete="nickname" required placeholder="例如：小林">
+        <fieldset>
+          <legend>选择你的角色</legend>
+          <div class="role-grid">
+            <label class="role-option"><input type="radio" name="role" value="typist" checked><span><b>打字端</b><small>输入文字，让对方听见</small></span></label>
+            <label class="role-option"><input type="radio" name="role" value="listener"><span><b>听语音端</b><small>接收并自动朗读</small></span></label>
+          </div>
+        </fieldset>
+        <button class="button primary" type="submit">创建房间 <span aria-hidden="true">→</span></button>
+        <p class="form-error" id="create-error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="join-view" class="view centered" hidden>
+      <form id="join-form" class="card setup-card compact">
+        <p class="eyebrow">你收到了一份邀请</p>
+        <h1>加入临时房间</h1>
+        <p id="join-role-hint" class="muted"></p>
+        <label for="guest-name">你的显示名称</label>
+        <input id="guest-name" name="name" maxlength="40" autocomplete="nickname" required placeholder="例如：小雨">
+        <button class="button primary" type="submit">进入房间</button>
+        <p class="form-error" id="join-error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="session-view" class="view session" hidden>
+      <div class="session-topbar">
+        <div>
+          <p class="eyebrow">临时多人语音房间</p>
+          <h1 id="session-title">正在连接…</h1>
+        </div>
+        <div class="topbar-actions">
+          <span id="connection-badge" class="status-badge offline">连接中</span>
+          <button id="copy-link" class="button ghost" type="button">复制邀请链接</button>
+        </div>
+      </div>
+
+      <div class="session-grid">
+        <aside class="card side-panel">
+          <section>
+            <h2>房间成员</h2>
+            <div class="person"><span class="avatar typist" aria-hidden="true">字</span><div><b id="typist-name">打字端</b><small id="typist-status">等待加入</small></div></div>
+            <div class="person"><span class="avatar listener" aria-hidden="true">声</span><div><b id="listener-name">听语音端</b><small id="listener-status">等待加入</small></div></div>
+          </section>
+
+          <section id="voice-settings" hidden>
+            <h2>朗读设置</h2>
+            <label for="speech-mode">朗读方式</label>
+            <select id="speech-mode">
+              <option value="device">对方设备音色</option>
+              <option value="cloned" disabled>本地克隆音色（未配置）</option>
+            </select>
+            <div id="device-voice-settings" class="nested-settings">
+              <label for="voice-select">音色</label>
+              <select id="voice-select"><option value="">等待对方提供音色…</option></select>
+              <label for="rate-select">语速</label>
+              <select id="rate-select"><option value="0.8">慢</option><option value="1" selected>正常</option><option value="1.25">快</option></select>
+              <button id="preview-voice" class="button secondary full" type="button">试听音色</button>
+            </div>
+            <form id="clone-voice-form" class="nested-settings" hidden>
+              <label for="clone-name">音色名称</label>
+              <input id="clone-name" name="name" maxlength="40" value="我的音色" required>
+              <label for="prompt-text">准备朗读的参考文字</label>
+              <textarea id="prompt-text" name="promptText" maxlength="500" rows="3" required placeholder="先填写文字，再逐字清晰朗读"></textarea>
+              <div class="recorder" aria-labelledby="recorder-label">
+                <span id="recorder-label" class="recorder-label">录制参考声音（建议 3–15 秒）</span>
+                <label for="microphone-select">麦克风输入设备</label>
+                <select id="microphone-select"><option value="">系统默认麦克风</option></select>
+                <div class="recorder-actions">
+                  <button id="start-recording" class="button secondary" type="button"><span class="record-dot" aria-hidden="true"></span>开始录音</button>
+                  <button id="stop-recording" class="button danger" type="button" disabled>停止录音</button>
+                  <output id="recording-time" aria-live="polite">00:00</output>
+                </div>
+                <canvas id="recording-waveform" class="recording-waveform" width="600" height="120" role="img" aria-label="麦克风实时声音波形"></canvas>
+                <div class="level-meter" role="meter" aria-label="麦克风输入音量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="recording-level"></span></div>
+                <audio id="recording-preview" controls hidden aria-label="参考录音预览"></audio>
+                <p id="recording-status" class="hint" role="status">录音只用于当前房间的音色克隆。</p>
+              </div>
+              <label class="consent"><input name="consent" type="checkbox" required> 我确认已获得该声音所有者的明确授权</label>
+              <button class="button secondary full" type="submit">创建克隆音色</button>
+              <p id="clone-status" class="hint" role="status"></p>
+            </form>
+          </section>
+
+          <section id="listener-controls" hidden>
+            <h2>语音控制</h2>
+            <div class="auto-speech-notice" role="status"><span aria-hidden="true">●</span><div><b>自动朗读始终开启</b><small>收到新消息后立即排队朗读</small></div></div>
+            <label for="volume-slider">朗读音量 <output id="volume-value" for="volume-slider">100%</output></label>
+            <input id="volume-slider" class="volume-slider" type="range" min="0" max="100" step="5" value="100" aria-describedby="volume-hint">
+            <p id="volume-hint" class="hint">仅调整网页朗读音量，设备总音量仍由系统控制。</p>
+            <div class="control-row">
+              <button id="pause-speech" class="button secondary" type="button" disabled>暂停</button>
+              <button id="skip-speech" class="button danger" type="button" disabled>停止 / 跳过</button>
+            </div>
+            <p class="hint">请保持页面打开。设备支持时，屏幕会保持常亮。</p>
+          </section>
+
+          <details>
+            <summary>隐私与工作原理</summary>
+            <p class="hint">服务端仅实时转发消息，不保存正文。听语音端按先入先出队列，调用设备内置的 Web Speech API 朗读。</p>
+          </details>
+        </aside>
+
+        <section class="card conversation" aria-label="会话">
+          <div id="empty-state" class="empty-state"><span aria-hidden="true">···</span><h2>会话尚未开始</h2><p>双方就绪后，发送的文字会出现在这里。</p></div>
+          <ol id="message-list" class="message-list" aria-live="polite"></ol>
+          <form id="message-form" class="composer" hidden>
+            <label class="sr-only" for="message-input">输入要朗读的文字</label>
+            <textarea id="message-input" maxlength="500" rows="3" placeholder="输入要让对方听见的话…"></textarea>
+            <div class="composer-footer"><span id="character-count">0 / 500</span><button id="send-message" class="button primary" type="submit">发送并朗读</button></div>
+            <p id="send-hint" class="hint">等待听语音端加入并启用自动朗读</p>
+          </form>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <div id="announcer" class="sr-only" aria-live="assertive"></div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
