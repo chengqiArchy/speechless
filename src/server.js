@@ -3,7 +3,7 @@ import express from 'express';
 import multer from 'multer';
 import { Server } from 'socket.io';
 import { CosyVoiceClient } from './cosyvoice-client.js';
-import { RoomError, RoomStore, ROLES } from './room-store.js';
+import { RoomError, RoomStore } from './room-store.js';
 
 const port = Number.parseInt(process.env.PORT ?? '30293', 10);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -84,7 +84,7 @@ io.on('connection', (socket) => {
       socket.join(result.room.id);
       socket.data.roomId = result.room.id;
       socket.data.role = result.role;
-      acknowledge({ ok: true, role: result.role, token: result.token, presence: rooms.presence(result.room) });
+      acknowledge({ ok: true, role: result.role, token: result.token, self: rooms.selfState(socket.id), presence: rooms.presence(result.room) });
       io.to(result.room.id).emit('room:presence', rooms.presence(result.room));
       log('room.joined', { roomId: result.room.id, role: result.role, correlationId: socket.id });
     } catch (error) {
@@ -104,14 +104,13 @@ io.on('connection', (socket) => {
 
   socket.on('message:create', (payload, acknowledge = () => {}) => {
     try {
-      const { room, message } = rooms.validateMessage(socket.id, payload?.text);
-      message.speechMode = room.speech.mode;
+      const { room, message, clonedVoice } = rooms.validateMessage(socket.id, payload?.text);
       io.to(room.id).emit('message:new', message);
       acknowledge({ ok: true, id: message.id });
       log('message.delivered', { roomId: room.id, messageId: message.id, speechMode: message.speechMode, latencyMs: 0 });
       if (message.speechMode === 'cloned') {
         room.synthesisChain = room.synthesisChain
-          .then(() => synthesizeClonedMessage(room, message))
+          .then(() => synthesizeClonedMessage(room, message, clonedVoice))
           .catch(() => {});
       }
     } catch (error) {
@@ -119,11 +118,22 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('audio:replay', (payload, acknowledge = () => {}) => {
+    try {
+      if (typeof payload?.id !== 'string') throw new RoomError('INVALID_MESSAGE', '无效的语音消息');
+      const audio = rooms.getGeneratedAudio(socket.id, payload.id.slice(0, 60));
+      if (!audio) throw new RoomError('AUDIO_NOT_FOUND', '语音文件已不存在');
+      acknowledge({ ok: true, audio });
+    } catch (error) {
+      acknowledge(socketError(error));
+    }
+  });
+
   socket.on('message:status', (payload) => {
     try {
-      const { room, role } = rooms.roomForSocket(socket.id);
+      const { room } = rooms.roomForSocket(socket.id);
       const allowed = new Set(['播放中', '已播放', '播放失败', '已暂停']);
-      if (role !== ROLES.LISTENER || !allowed.has(payload?.status) || typeof payload?.id !== 'string') return;
+      if (!allowed.has(payload?.status) || typeof payload?.id !== 'string') return;
       const id = payload.id.slice(0, 60);
       const aggregate = rooms.updatePlayback(socket.id, id, payload.status);
       io.to(room.id).emit('message:status', { id, status: aggregate.status });
@@ -132,14 +142,10 @@ io.on('connection', (socket) => {
 
   socket.on('voice:settings', (payload, acknowledge = () => {}) => {
     try {
-      const { room, role } = rooms.roomForSocket(socket.id);
-      if (role !== ROLES.TYPIST) throw new RoomError('FORBIDDEN', '只有打字端可以设置音色');
+      rooms.roomForSocket(socket.id);
       const rate = [0.8, 1, 1.25].includes(payload?.rate) ? payload.rate : 1;
-      const updatedRoom = rooms.setSpeechMode(socket.id, payload?.mode);
-      const settings = { voiceURI: String(payload?.voiceURI ?? '').slice(0, 200), rate, mode: updatedRoom.speech.mode };
-      socket.to(room.id).emit('voice:settings', settings);
-      io.to(room.id).emit('room:presence', rooms.presence(updatedRoom));
-      acknowledge({ ok: true });
+      rooms.setSpeechMode(socket.id, payload?.mode, { voiceURI: payload?.voiceURI, rate });
+      acknowledge({ ok: true, mode: rooms.selfState(socket.id).mode });
     } catch (error) {
       acknowledge(socketError(error));
     }
@@ -147,12 +153,7 @@ io.on('connection', (socket) => {
 
   socket.on('voice:preview', (payload, acknowledge = () => {}) => {
     try {
-      const { room, role } = rooms.roomForSocket(socket.id);
-      if (role !== ROLES.TYPIST) throw new RoomError('FORBIDDEN', '只有打字端可以试听');
-      socket.to(room.id).emit('voice:preview', {
-        voiceURI: String(payload?.voiceURI ?? '').slice(0, 200),
-        rate: [0.8, 1, 1.25].includes(payload?.rate) ? payload.rate : 1,
-      });
+      rooms.roomForSocket(socket.id);
       acknowledge({ ok: true });
     } catch (error) {
       acknowledge(socketError(error));
@@ -181,12 +182,12 @@ function sendError(response, error) {
   response.status(result.code === 'ROOM_NOT_FOUND' ? 404 : 400).json(result);
 }
 
-async function synthesizeClonedMessage(room, message) {
-  const profile = room.speech.clonedVoice;
+async function synthesizeClonedMessage(room, message, profile) {
   if (!profile) return io.to(room.id).emit('message:fallback', { id: message.id });
   io.to(room.id).emit('message:status', { id: message.id, status: '正在生成语音' });
   try {
     const audio = await cosyvoice.synthesize({ text: message.text, promptText: profile.promptText, promptWav: profile.promptWav });
+    rooms.retainGeneratedAudio(room, message.id, audio);
     io.to(room.id).emit('audio:new', { id: message.id, audio });
     log('tts.generated', { roomId: room.id, messageId: message.id, audioBytes: audio.length });
   } catch (error) {

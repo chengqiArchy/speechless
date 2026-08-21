@@ -27,13 +27,6 @@
         <h2>创建临时房间</h2>
         <label for="creator-name">你的显示名称</label>
         <input id="creator-name" name="name" maxlength="40" autocomplete="nickname" required placeholder="例如：小林">
-        <fieldset>
-          <legend>选择你的角色</legend>
-          <div class="role-grid">
-            <label class="role-option"><input type="radio" name="role" value="typist" checked><span><b>打字端</b><small>输入文字，让对方听见</small></span></label>
-            <label class="role-option"><input type="radio" name="role" value="listener"><span><b>听语音端</b><small>接收并自动朗读</small></span></label>
-          </div>
-        </fieldset>
         <button class="button primary" type="submit">创建房间 <span aria-hidden="true">→</span></button>
         <p class="form-error" id="create-error" role="alert"></p>
       </form>
@@ -67,8 +60,7 @@
         <aside class="card side-panel">
           <section>
             <h2>房间成员</h2>
-            <div class="person"><span class="avatar typist" aria-hidden="true">字</span><div><b id="typist-name">打字端</b><small id="typist-status">等待加入</small></div></div>
-            <div class="person"><span class="avatar listener" aria-hidden="true">声</span><div><b id="listener-name">听语音端</b><small id="listener-status">等待加入</small></div></div>
+            <div class="person"><span class="avatar listener" aria-hidden="true">友</span><div><b id="member-summary">正在连接…</b><small id="member-names">等待成员加入</small></div></div>
           </section>
 
           <section id="voice-settings" hidden>

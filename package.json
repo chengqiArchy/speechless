@@ -8,7 +8,7 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test",
-    "check": "node --check src/server.js && node --check src/room-store.js && node --check src/cosyvoice-client.js && node --check public/app.js && node --check public/voice-loader.js && node --check public/audio-recorder.js && node --check public/recording-flow.js && python3 -m py_compile services/cosyvoice_server.py"
+    "check": "node --check src/server.js && node --check src/room-store.js && node --check src/cosyvoice-client.js && node --check public/app.js && node --check public/voice-loader.js && node --check public/audio-recorder.js && node --check public/recording-flow.js && node --check public/speech-mode.js && python3 -m py_compile services/cosyvoice_server.py"
   },
   "engines": {
     "node": ">=20"

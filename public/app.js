@@ -1,5 +1,6 @@
 import { WavRecorder } from './audio-recorder.js';
 import { beginRecording } from './recording-flow.js';
+import { resolveSpeechMode } from './speech-mode.js';
 import { watchAvailableVoices } from './voice-loader.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -8,13 +9,13 @@ const state = {
   socket: null, role: null, token: null, name: null, presence: null,
   messages: new Map(), voices: [], ready: false, queue: [], current: null,
   speechSettings: { voiceURI: '', rate: 1, mode: 'device' },
-  clonedVoice: null, currentAudio: null,
+  clonedVoice: null, currentAudio: null, remoteSpeechMode: 'device', configuringClonedVoice: false,
   recorder: null, recordingBlob: null, recordingUrl: null, recordingTimer: null, recordingStartedAt: null,
   recordingDetectedSound: false, noInputTimer: null,
   listenerVolume: readStoredVolume(),
   stopVoiceWatcher: null, wakeLock: null,
 };
-const roleLabel = (role) => role === 'typist' ? '打字端' : '听语音端';
+const roleLabel = () => '房间成员';
 const storageKey = () => `speechless:room:${state.roomId}`;
 
 if (state.roomId) initializeRoom(); else show('#home-view');
@@ -28,7 +29,7 @@ $('#create-form').addEventListener('submit', async (event) => {
   if (!name) { $('#create-error').textContent = '请输入显示名称'; return; }
   submit.disabled = true;
   try {
-    const response = await fetch('/api/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: data.get('role') }) });
+    const response = await fetch('/api/rooms', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
     localStorage.setItem(`speechless:room:${result.id}`, JSON.stringify({ token: result.token, name }));
@@ -95,10 +96,12 @@ function registerSocketEvents() {
       }
       state.role = result.role;
       state.token = result.token;
+      state.clonedVoice = result.self?.clonedVoice ?? null;
+      state.remoteSpeechMode = result.self?.mode === 'cloned' ? 'cloned' : 'device';
       localStorage.setItem(storageKey(), JSON.stringify({ token: state.token, name: state.name }));
       setupRoleView();
       renderPresence(result.presence);
-      if (state.role === 'listener' && state.ready) publishListenerState('已就绪');
+      if (state.ready) publishListenerState('已就绪');
       updateConnection('已连接', true);
       announce(`已作为${roleLabel(state.role)}加入房间`);
     });
@@ -113,58 +116,58 @@ function registerSocketEvents() {
   socket.on('message:status', updateMessageStatus);
   socket.on('message:fallback', ({ id }) => {
     const message = state.messages.get(id);
-    if (state.role === 'listener' && message) enqueueSpeech({ ...message, speechMode: 'device' });
+    if (message) enqueueSpeech({ ...message, speechMode: 'device' });
   });
   socket.on('audio:new', ({ id, audio }) => {
     const message = state.messages.get(id);
-    if (state.role === 'listener' && message) enqueueSpeech({ ...message, audio });
+    if (!message) return;
+    message.audio = audio;
+    ensureReplayControl(message);
+    enqueueSpeech(message);
   });
   socket.on('voice:settings', (settings) => { state.speechSettings = settings; });
   socket.on('voice:preview', previewOnListener);
 }
 
 function setupRoleView() {
-  $('#session-title').textContent = `${state.name} · ${roleLabel(state.role)}`;
-  $('#voice-settings').hidden = state.role !== 'typist';
-  $('#listener-controls').hidden = state.role !== 'listener';
-  $('#message-form').hidden = state.role !== 'typist';
-  if (state.role === 'typist') { initializeClonedVoice(); initializeMicrophones(); }
-  if (state.role === 'listener') {
-    startAutomaticSpeech();
-    const percentage = Math.round(state.listenerVolume * 100);
-    $('#volume-slider').value = String(percentage);
-    $('#volume-value').textContent = `${percentage}%`;
-  }
+  $('#session-title').textContent = `${state.name} · 房间成员`;
+  $('#voice-settings').hidden = false;
+  $('#listener-controls').hidden = false;
+  $('#message-form').hidden = false;
+  $('#speech-mode').value = state.remoteSpeechMode;
+  initializeClonedVoice();
+  initializeMicrophones();
+  startAutomaticSpeech();
+  const percentage = Math.round(state.listenerVolume * 100);
+  $('#volume-slider').value = String(percentage);
+  $('#volume-value').textContent = `${percentage}%`;
 }
 
 function renderPresence(presence) {
   if (!presence) return;
   state.presence = presence;
-  $('#typist-name').textContent = presence.typistName || '打字端';
-  const listenerCount = presence.listenerCount || 0;
-  $('#listener-name').textContent = listenerCount > 1 ? `${presence.listenerName} 等 ${listenerCount} 人` : (presence.listenerName || '听语音端');
-  $('#listener-name').title = (presence.listenerNames || []).join('、');
-  $('#typist-status').textContent = presence.typistOnline ? '在线' : '等待加入 / 已断线';
-  $('#listener-status').textContent = presence.listenerOnline ? presence.listener.status : '等待加入 / 已断线';
-  if (state.role === 'typist') {
-    state.clonedVoice = presence.speech?.clonedVoice ?? state.clonedVoice;
-    $('#speech-mode').value = presence.speech?.mode === 'cloned' ? 'cloned' : 'device';
-    renderVoiceMode();
-    renderVoiceOptions(presence.listener.voices || []);
-  }
+  const participantCount = presence.participantCount || 0;
+  $('#member-summary').textContent = `${participantCount} 人在线`;
+  $('#member-names').textContent = (presence.participantNames || []).join('、') || '等待成员加入';
+  $('#speech-mode').value = resolveSpeechMode({
+    remoteMode: state.remoteSpeechMode,
+    localMode: $('#speech-mode').value,
+    configuringClonedVoice: state.configuringClonedVoice,
+  });
+  renderVoiceMode();
+  renderVoiceOptions(presence.listener?.voices || []);
   updateComposer();
 }
 
 function updateComposer() {
-  if (state.role !== 'typist') return;
-  const peerOnline = Boolean(state.presence?.listenerOnline);
-  const listenerReady = Boolean(state.presence?.listener?.ready);
+  const peerOnline = (state.presence?.participantCount || 0) > 1;
+  const listenerReady = (state.presence?.readyParticipantCount || 0) > (state.ready ? 1 : 0);
   const connected = state.socket?.connected;
   const input = $('#message-input');
   const button = $('#send-message');
   input.disabled = !connected || !peerOnline || !listenerReady;
   button.disabled = input.disabled || !input.value.trim();
-  $('#send-hint').textContent = !connected ? '连接异常，正在尝试重连' : !peerOnline ? '等待至少一名听语音端加入' : !listenerReady ? '对方尚未启用自动朗读' : 'Enter 发送，Shift + Enter 换行';
+  $('#send-hint').textContent = !connected ? '连接异常，正在尝试重连' : !peerOnline ? '等待至少一名其他成员加入' : !listenerReady ? '其他成员尚未准备好自动朗读' : 'Enter 发送，Shift + Enter 换行';
 }
 
 $('#message-input').addEventListener('input', () => {
@@ -198,23 +201,38 @@ function receiveMessage(message) {
   const text = document.createElement('p');
   text.textContent = message.text;
   const footer = document.createElement('footer');
+  const sender = document.createElement('b');
+  sender.textContent = message.senderName || '房间成员';
   const time = document.createElement('time');
   time.dateTime = message.sentAt;
   time.textContent = new Date(message.sentAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   const status = document.createElement('span');
   status.className = 'message-status';
   status.textContent = message.status;
-  footer.append(time, status);
-  if (state.role === 'listener') {
-    const replay = document.createElement('button');
-    replay.type = 'button'; replay.className = 'replay'; replay.textContent = '重播';
-    replay.addEventListener('click', () => enqueueSpeech(message));
-    footer.append(replay);
-  }
+  footer.append(sender, time, status);
   item.append(text, footer);
   $('#message-list').append(item);
   item.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  if (state.role === 'listener' && message.speechMode !== 'cloned') enqueueSpeech(message);
+  if (message.speechMode !== 'cloned') enqueueSpeech(message);
+  ensureReplayControl(message);
+}
+
+function ensureReplayControl(message) {
+  const footer = document.querySelector(`[data-id="${CSS.escape(message.id)}"] footer`);
+  if (!footer || footer.querySelector('.replay')) return;
+  const replay = document.createElement('button');
+  replay.type = 'button'; replay.className = 'replay'; replay.textContent = '重播';
+  replay.addEventListener('click', () => replayMessage(message));
+  footer.append(replay);
+}
+
+function replayMessage(message) {
+  if (message.audio || message.speechMode !== 'cloned') return enqueueSpeech(message);
+  state.socket.emit('audio:replay', { id: message.id }, (result) => {
+    if (!result?.ok) return toast(result?.error || '语音文件已不存在');
+    message.audio = result.audio;
+    enqueueSpeech(message);
+  });
 }
 
 function updateMessageStatus(update) {
@@ -226,13 +244,13 @@ function updateMessageStatus(update) {
 
 function loadVoices() {
   if (!('speechSynthesis' in window)) {
-    $('#listener-status').textContent = '此浏览器不支持朗读';
+    toast('此浏览器不支持自动朗读');
     return false;
   }
   state.stopVoiceWatcher?.();
   state.stopVoiceWatcher = watchAvailableVoices(speechSynthesis, (voices) => {
     state.voices = voices;
-    if (state.role === 'listener' && state.ready) publishListenerState('已就绪');
+    if (state.ready) publishListenerState('已就绪');
   });
   return true;
 }
@@ -255,7 +273,7 @@ function setSpeechReady(ready, status) {
 }
 
 function publishListenerState(status) {
-  if (!state.socket?.connected || state.role !== 'listener') return;
+  if (!state.socket?.connected) return;
   state.socket.emit('listener:state', {
     ready: state.ready, status,
     voices: state.voices.length
@@ -278,22 +296,27 @@ function renderVoiceOptions(voices) {
   const sorted = [...voices].sort((a, b) => (a.lang.startsWith('zh') ? -1 : 1) - (b.lang.startsWith('zh') ? -1 : 1));
   sorted.forEach((voice) => select.add(new Option(`${voice.name} · ${voice.lang}`, voice.voiceURI)));
   select.value = sorted.some((voice) => voice.voiceURI === oldValue) ? oldValue : (sorted.find((voice) => voice.lang.startsWith('zh'))?.voiceURI || sorted[0].voiceURI);
-  sendVoiceSettings();
 }
 
 $('#voice-select').addEventListener('change', sendVoiceSettings);
 $('#rate-select').addEventListener('change', sendVoiceSettings);
 $('#speech-mode').addEventListener('change', () => {
+  const mode = $('#speech-mode').value;
+  state.configuringClonedVoice = mode === 'cloned' && state.remoteSpeechMode !== 'cloned';
   renderVoiceMode();
-  if ($('#speech-mode').value !== 'cloned' || state.clonedVoice) sendVoiceSettings();
+  if (mode !== 'cloned' || state.clonedVoice) sendVoiceSettings();
 });
 function sendVoiceSettings() {
-  if (!state.socket?.connected || state.role !== 'typist') return;
+  if (!state.socket?.connected) return;
   state.socket.emit('voice:settings', {
     voiceURI: $('#voice-select').value,
     rate: Number($('#rate-select').value),
     mode: $('#speech-mode').value,
-  }, (result) => { if (!result?.ok) toast(result?.error); });
+  }, (result) => {
+    if (!result?.ok) return toast(result?.error);
+    state.remoteSpeechMode = $('#speech-mode').value;
+    state.configuringClonedVoice = false;
+  });
 }
 
 async function initializeClonedVoice() {
@@ -469,7 +492,9 @@ $('#clone-voice-form').addEventListener('submit', async (event) => {
 });
 
 $('#preview-voice').addEventListener('click', () => {
-  state.socket.emit('voice:preview', { voiceURI: $('#voice-select').value, rate: Number($('#rate-select').value) }, (result) => toast(result?.ok ? '已在对方设备试听' : result?.error));
+  if (!('speechSynthesis' in window)) return toast('此浏览器不支持试听');
+  const settings = { voiceURI: $('#voice-select').value, rate: Number($('#rate-select').value) };
+  speechSynthesis.speak(createUtterance('你好，这是我的设备音色。', settings));
 });
 
 function enqueueSpeech(message) {
@@ -486,7 +511,7 @@ function speakNext() {
   const message = state.queue.shift();
   state.current = message;
   if (message.audio) return playClonedAudio(message);
-  const utterance = createUtterance(message.text, state.speechSettings);
+  const utterance = createUtterance(message.text, message.voiceSettings || state.speechSettings);
   let finished = false;
   const finish = (status) => {
     if (finished) return;
@@ -577,10 +602,10 @@ $('#copy-link').addEventListener('click', async () => {
 });
 
 document.addEventListener('pointerdown', () => {
-  if (state.role === 'listener' && 'speechSynthesis' in window) speechSynthesis.resume();
+  if ('speechSynthesis' in window) speechSynthesis.resume();
 });
 document.addEventListener('keydown', () => {
-  if (state.role === 'listener' && 'speechSynthesis' in window) speechSynthesis.resume();
+  if ('speechSynthesis' in window) speechSynthesis.resume();
 });
 
 window.addEventListener('beforeunload', () => {
@@ -589,7 +614,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState === 'visible' && state.role === 'listener' && state.ready && 'wakeLock' in navigator && !state.wakeLock) {
+  if (document.visibilityState === 'visible' && state.ready && 'wakeLock' in navigator && !state.wakeLock) {
     try { state.wakeLock = await navigator.wakeLock.request('screen'); } catch { /* ignored */ }
   }
 });
