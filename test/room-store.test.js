@@ -30,7 +30,9 @@ test('任意成员都可以发送文字', () => {
   store.setListenerState('s1', { ready: true, status: '已就绪', voices: [] });
   store.setListenerState('s2', { ready: true, status: '已就绪', voices: [] });
   store.setListenerState('s3', { ready: true, status: '已就绪', voices: [] });
-  assert.equal(store.validateMessage('s1', '成员1发送').message.senderName, '成员1');
+  const first = store.validateMessage('s1', '成员1发送').message;
+  assert.equal(first.senderName, '成员1');
+  assert.equal(first.senderId, 's1');
   assert.equal(store.validateMessage('s2', '成员2发送').message.senderName, '成员2');
 });
 

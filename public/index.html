@@ -105,6 +105,7 @@
           <section id="listener-controls" hidden>
             <h2>语音控制</h2>
             <div class="auto-speech-notice" role="status"><span aria-hidden="true">●</span><div><b>自动朗读始终开启</b><small>收到新消息后立即排队朗读</small></div></div>
+            <label class="toggle-row" for="listen-own-voice"><span><b>听见自己的语音</b><small>关闭后，其他成员仍会听到</small></span><input id="listen-own-voice" type="checkbox" role="switch" checked></label>
             <label for="volume-slider">朗读音量 <output id="volume-value" for="volume-slider">100%</output></label>
             <input id="volume-slider" class="volume-slider" type="range" min="0" max="100" step="5" value="100" aria-describedby="volume-hint">
             <p id="volume-hint" class="hint">仅调整网页朗读音量，设备总音量仍由系统控制。</p>

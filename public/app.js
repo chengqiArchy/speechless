@@ -13,6 +13,7 @@ const state = {
   recorder: null, recordingBlob: null, recordingUrl: null, recordingTimer: null, recordingStartedAt: null,
   recordingDetectedSound: false, noInputTimer: null,
   listenerVolume: readStoredVolume(),
+  listenOwnVoice: localStorage.getItem('speechless:listen-own-voice') !== 'false',
   stopVoiceWatcher: null, wakeLock: null,
 };
 const roleLabel = () => '房间成员';
@@ -145,7 +146,7 @@ function registerSocketEvents() {
     if (!message) return;
     message.audio = audio;
     ensureReplayControl(message);
-    enqueueSpeech(message);
+    if (!skipOwnPlayback(message)) enqueueSpeech(message);
   });
   socket.on('voice:settings', (settings) => { state.speechSettings = settings; });
   socket.on('voice:preview', previewOnListener);
@@ -163,6 +164,7 @@ function setupRoleView() {
   const percentage = Math.round(state.listenerVolume * 100);
   $('#volume-slider').value = String(percentage);
   $('#volume-value').textContent = `${percentage}%`;
+  $('#listen-own-voice').checked = state.listenOwnVoice;
 }
 
 function renderPresence(presence) {
@@ -235,8 +237,14 @@ function receiveMessage(message) {
   item.append(text, footer);
   $('#message-list').append(item);
   item.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  if (message.speechMode !== 'cloned') enqueueSpeech(message);
+  if (message.speechMode !== 'cloned' && !skipOwnPlayback(message)) enqueueSpeech(message);
   ensureReplayControl(message);
+}
+
+function skipOwnPlayback(message) {
+  if (state.listenOwnVoice || message.senderId !== state.socket?.id) return false;
+  state.socket.emit('message:status', { id: message.id, status: '已播放' });
+  return true;
 }
 
 function ensureReplayControl(message) {
@@ -589,6 +597,11 @@ $('#volume-slider').addEventListener('input', (event) => {
   localStorage.setItem('speechless:volume', String(state.listenerVolume));
 });
 $('#volume-slider').addEventListener('change', () => announce(`朗读音量已调整为 ${$('#volume-slider').value}%`));
+$('#listen-own-voice').addEventListener('change', (event) => {
+  state.listenOwnVoice = event.currentTarget.checked;
+  localStorage.setItem('speechless:listen-own-voice', String(state.listenOwnVoice));
+  announce(state.listenOwnVoice ? '已开启自己的语音播放' : '已关闭自己的语音播放');
+});
 
 $('#pause-speech').addEventListener('click', () => {
   if (state.currentAudio) {

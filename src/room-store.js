@@ -139,7 +139,7 @@ export class RoomStore {
     if (slot.rateEvents.length >= 2) throw new RoomError('RATE_LIMITED', '发送太快，请稍后再试');
     slot.rateEvents.push(now);
     const message = {
-      id: randomUUID(), text: normalized, senderName: slot.name,
+      id: randomUUID(), text: normalized, senderId: slot.socketId, senderName: slot.name,
       sentAt: new Date(now).toISOString(), status: '已送达', speechMode: slot.speech.mode,
       voiceSettings: { voiceURI: slot.speech.voiceURI, rate: slot.speech.rate },
     };
