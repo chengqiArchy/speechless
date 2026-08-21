@@ -78,7 +78,7 @@ function connect() {
   clearTimeout(state.connectionTimer);
   state.connectionTimer = setTimeout(() => updateConnection('网络较慢，尝试备用连接', false), 3000);
   state.socket = io({
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
     tryAllTransports: true,
     reconnectionDelay: 500,
     reconnectionDelayMax: 3000,
@@ -93,7 +93,12 @@ function registerSocketEvents() {
     clearTimeout(state.connectionTimer);
     const transport = socket.io.engine.transport.name === 'websocket' ? 'WebSocket' : '备用连接';
     updateConnection(`${transport} 已建立`, true);
-    socket.emit('room:join', { roomId: state.roomId, token: state.token, name: state.name }, (result) => {
+    socket.timeout(8000).emit('room:join', { roomId: state.roomId, token: state.token, name: state.name }, (timeoutError, result) => {
+      if (timeoutError) {
+        updateConnection('加入超时，正在重试', false);
+        socket.disconnect();
+        return setTimeout(() => socket.connect(), 800);
+      }
       if (!result?.ok) {
         updateConnection('连接失败', false);
         if (result?.code === 'SESSION_EXPIRED') {
@@ -110,10 +115,15 @@ function registerSocketEvents() {
       state.clonedVoice = result.self?.clonedVoice ?? null;
       state.remoteSpeechMode = result.self?.mode === 'cloned' ? 'cloned' : 'device';
       localStorage.setItem(storageKey(), JSON.stringify({ token: state.token, name: state.name }));
-      setupRoleView();
-      renderPresence(result.presence);
-      if (state.ready) publishListenerState('已就绪');
       updateConnection('已连接', true);
+      try {
+        setupRoleView();
+        renderPresence(result.presence);
+        if (state.ready) publishListenerState('已就绪');
+      } catch (error) {
+        console.error('房间界面初始化失败', error);
+        toast('已连接，但部分设备功能初始化失败');
+      }
       announce(`已作为${roleLabel(state.role)}加入房间`);
     });
   });
