@@ -6,7 +6,7 @@ import { watchAvailableVoices } from './voice-loader.js';
 const $ = (selector) => document.querySelector(selector);
 const state = {
   roomId: location.pathname.startsWith('/room/') ? location.pathname.split('/')[2] : null,
-  socket: null, role: null, token: null, name: null, presence: null,
+  socket: null, connectionTimer: null, role: null, token: null, name: null, presence: null,
   messages: new Map(), voices: [], ready: false, queue: [], current: null,
   speechSettings: { voiceURI: '', rate: 1, mode: 'device' },
   clonedVoice: null, currentAudio: null, remoteSpeechMode: 'device', configuringClonedVoice: false,
@@ -74,14 +74,25 @@ async function initializeRoom() {
 function connect() {
   show('#session-view');
   if (state.socket) state.socket.disconnect();
-  state.socket = io({ reconnectionDelay: 500, reconnectionDelayMax: 3000, timeout: 5000 });
+  updateConnection('建立实时连接', false);
+  clearTimeout(state.connectionTimer);
+  state.connectionTimer = setTimeout(() => updateConnection('网络较慢，尝试备用连接', false), 3000);
+  state.socket = io({
+    transports: ['websocket', 'polling'],
+    tryAllTransports: true,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 3000,
+    timeout: 5000,
+  });
   registerSocketEvents();
 }
 
 function registerSocketEvents() {
   const socket = state.socket;
   socket.on('connect', () => {
-    updateConnection('连接中', false);
+    clearTimeout(state.connectionTimer);
+    const transport = socket.io.engine.transport.name === 'websocket' ? 'WebSocket' : '备用连接';
+    updateConnection(`${transport} 已建立`, true);
     socket.emit('room:join', { roomId: state.roomId, token: state.token, name: state.name }, (result) => {
       if (!result?.ok) {
         updateConnection('连接失败', false);
@@ -107,6 +118,7 @@ function registerSocketEvents() {
     });
   });
   socket.on('disconnect', () => {
+    clearTimeout(state.connectionTimer);
     updateConnection('正在重连', false);
     updateComposer();
   });
