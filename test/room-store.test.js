@@ -26,18 +26,20 @@ test('房间达到人数上限后拒绝继续加入', () => {
 
 test('任意成员都可以发送文字', () => {
   const store = new RoomStore();
-  joinMembers(store, 2);
+  joinMembers(store, 3);
   store.setListenerState('s1', { ready: true, status: '已就绪', voices: [] });
   store.setListenerState('s2', { ready: true, status: '已就绪', voices: [] });
+  store.setListenerState('s3', { ready: true, status: '已就绪', voices: [] });
   assert.equal(store.validateMessage('s1', '成员1发送').message.senderName, '成员1');
   assert.equal(store.validateMessage('s2', '成员2发送').message.senderName, '成员2');
 });
 
 test('消息使用发送者自己的克隆音色', () => {
   const store = new RoomStore();
-  const { created } = joinMembers(store, 2);
+  const { created } = joinMembers(store, 3);
   store.setListenerState('s1', { ready: true, status: '已就绪', voices: [] });
   store.setListenerState('s2', { ready: true, status: '已就绪', voices: [] });
+  store.setListenerState('s3', { ready: true, status: '已就绪', voices: [] });
   const profile = store.setClonedVoice(created.id, created.token, {
     name: '我的声音', promptText: '参考文字', promptWav: Buffer.from('RIFF----WAVE'),
   });
@@ -48,11 +50,12 @@ test('消息使用发送者自己的克隆音色', () => {
   assert.equal(store.validateMessage('s2', '使用设备声音').message.speechMode, 'device');
 });
 
-test('至少有一名其他成员就绪后才能发送', () => {
+test('至少两人在线即可对话，不要求每人制作音色', () => {
   const store = new RoomStore();
-  joinMembers(store, 2);
+  const { room } = joinMembers(store, 1);
   store.setListenerState('s1', { ready: true, status: '已就绪', voices: [] });
-  assert.throws(() => store.validateMessage('s1', '你好'), /其他成员尚未准备好/);
+  assert.throws(() => store.validateMessage('s1', '你好'), /至少需要 2 人/);
+  store.join({ roomId: room.id, name: '成员2', socketId: 's2' });
   store.setListenerState('s2', { ready: true, status: '已就绪', voices: [] });
   assert.doesNotThrow(() => store.validateMessage('s1', '你好'));
 });
@@ -78,9 +81,10 @@ test('生成语音保留在房间内存并可重播', () => {
 test('每位成员独立限流为每秒两条消息', () => {
   let now = 1000;
   const store = new RoomStore({ now: () => now });
-  joinMembers(store, 2);
+  joinMembers(store, 3);
   store.setListenerState('s1', { ready: true, status: '已就绪', voices: [] });
   store.setListenerState('s2', { ready: true, status: '已就绪', voices: [] });
+  store.setListenerState('s3', { ready: true, status: '已就绪', voices: [] });
   store.validateMessage('s1', '一'); store.validateMessage('s1', '二');
   assert.throws(() => store.validateMessage('s1', '三'), (error) => error instanceof RoomError && error.code === 'RATE_LIMITED');
   assert.doesNotThrow(() => store.validateMessage('s2', '另一人的消息'));

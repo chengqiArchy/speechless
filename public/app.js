@@ -160,14 +160,14 @@ function renderPresence(presence) {
 }
 
 function updateComposer() {
-  const peerOnline = (state.presence?.participantCount || 0) > 1;
+  const peerOnline = (state.presence?.participantCount || 0) >= 2;
   const listenerReady = (state.presence?.readyParticipantCount || 0) > (state.ready ? 1 : 0);
   const connected = state.socket?.connected;
   const input = $('#message-input');
   const button = $('#send-message');
   input.disabled = !connected || !peerOnline || !listenerReady;
   button.disabled = input.disabled || !input.value.trim();
-  $('#send-hint').textContent = !connected ? '连接异常，正在尝试重连' : !peerOnline ? '等待至少一名其他成员加入' : !listenerReady ? '其他成员尚未准备好自动朗读' : 'Enter 发送，Shift + Enter 换行';
+  $('#send-hint').textContent = !connected ? '连接异常，正在尝试重连' : !peerOnline ? '至少需要 2 人在线才能开始对话' : !listenerReady ? '其他成员尚未准备好自动朗读' : 'Enter 发送，Shift + Enter 换行';
 }
 
 $('#message-input').addEventListener('input', () => {

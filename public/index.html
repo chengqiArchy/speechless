@@ -122,13 +122,13 @@
         </aside>
 
         <section class="card conversation" aria-label="会话">
-          <div id="empty-state" class="empty-state"><span aria-hidden="true">···</span><h2>会话尚未开始</h2><p>双方就绪后，发送的文字会出现在这里。</p></div>
+          <div id="empty-state" class="empty-state"><span aria-hidden="true">···</span><h2>会话尚未开始</h2><p>至少两名成员在线后，发送的文字会出现在这里。</p></div>
           <ol id="message-list" class="message-list" aria-live="polite"></ol>
           <form id="message-form" class="composer" hidden>
             <label class="sr-only" for="message-input">输入要朗读的文字</label>
-            <textarea id="message-input" maxlength="500" rows="3" placeholder="输入要让对方听见的话…"></textarea>
+            <textarea id="message-input" maxlength="500" rows="3" placeholder="输入要让房间成员听见的话…"></textarea>
             <div class="composer-footer"><span id="character-count">0 / 500</span><button id="send-message" class="button primary" type="submit">发送并朗读</button></div>
-            <p id="send-hint" class="hint">等待听语音端加入并启用自动朗读</p>
+            <p id="send-hint" class="hint">至少需要 2 人在线才能开始对话</p>
           </form>
         </section>
       </div>

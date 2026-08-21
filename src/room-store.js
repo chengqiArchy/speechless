@@ -7,10 +7,11 @@ export class RoomError extends Error {
 }
 
 export class RoomStore {
-  constructor({ reservationMs = 5 * 60_000, roomTtlMs = 30 * 60_000, maxParticipants = 20, now = Date.now } = {}) {
+  constructor({ reservationMs = 5 * 60_000, roomTtlMs = 30 * 60_000, minParticipants = 2, maxParticipants = 20, now = Date.now } = {}) {
     this.rooms = new Map();
     this.reservationMs = reservationMs;
     this.roomTtlMs = roomTtlMs;
+    this.minParticipants = minParticipants;
     this.maxParticipants = maxParticipants;
     this.now = now;
   }
@@ -129,7 +130,7 @@ export class RoomStore {
     if (!normalized) throw new RoomError('EMPTY_MESSAGE', '消息不能为空');
     if ([...normalized].length > 500) throw new RoomError('MESSAGE_TOO_LONG', '消息不能超过 500 个字符');
     const online = this.#online(room);
-    if (online.length < 2) throw new RoomError('PEER_OFFLINE', '请等待至少一名其他成员加入');
+    if (online.length < this.minParticipants) throw new RoomError('NOT_ENOUGH_PARTICIPANTS', `至少需要 ${this.minParticipants} 人在线才能开始对话`);
     if (!online.some((participant) => participant.socketId !== socketId && participant.playback.ready)) {
       throw new RoomError('PEER_NOT_READY', '其他成员尚未准备好自动朗读');
     }
